@@ -10,10 +10,12 @@ snapped to the nearest note in a chosen key and scale.
   short analysis windows to estimate your voice's fundamental frequency.
 - **Note snapping**: the detected pitch is mapped to the nearest note in the
   selected key/scale (Chromatic, Major, or Minor).
-- **Pitch shifting**: a simple granular (overlap-add) resampler shifts the
-  live audio toward the target note. It's a lightweight approximation of
-  real Auto-Tune, not a studio-grade PSOLA implementation — good enough for
-  a fun demo, not for a record label.
+- **Pitch shifting**: time-domain **PSOLA** (pitch-synchronous overlap-add)
+  moves the voice onto the target note. It extracts two-period, Hann-windowed
+  grains on a pitch-locked grid and overlap-adds them at the target period, so
+  adjacent grains stay in phase — the note lands on pitch cleanly instead of
+  being partially corrected and warbly. Still a lightweight demo, not a
+  studio-grade vocal processor, but the correction is now clearly audible.
 
 No build step, no npm dependencies — just static files and the Web Audio
 API.
@@ -38,12 +40,20 @@ from your speakers and cause feedback/echo.
   T-Pain-style robotic effect.
 - **Correction Strength** — how strongly pitch is pulled toward the target
   note (0% = no correction, 100% = full snap).
+- **Retune Speed** — how quickly the pitch snaps to the target. Low = a slow,
+  natural glide into tune; high = the near-instant robotic snap of hard
+  Auto-Tune.
 - **Wet / Dry Mix** — blend between your raw voice and the autotuned signal.
 - **Bypass** — instantly hear your raw voice (ignores the mix slider), handy
   for A/B-ing the effect on and off.
 - **Presets** — one-click starting points: **Subtle** (gentle, natural),
   **Pop** (noticeable but musical), **Hard Tune** (full robotic snap). They set
-  the strength and mix for you; tweak a slider afterwards to fine-tune.
+  the strength, mix, and retune speed for you; tweak a slider afterwards to
+  fine-tune.
+
+A **tuning meter** above the waveform shows how far your detected pitch sits
+from the target note (flat on the left, sharp on the right); the needle turns
+green when you're essentially in tune.
 
 A short line under the controls describes the current effect in plain language,
 so you can tell at a glance whether you're set to "gentle, natural tuning" or a

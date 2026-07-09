@@ -17,6 +17,9 @@ const strengthSlider = document.getElementById('strength');
 const mixSlider = document.getElementById('mix');
 const strengthValue = document.getElementById('strengthValue');
 const mixValue = document.getElementById('mixValue');
+const retuneSlider = document.getElementById('retune');
+const retuneValue = document.getElementById('retuneValue');
+const tunerNeedle = document.getElementById('tunerNeedle');
 const bypassCheckbox = document.getElementById('bypass');
 const recordButton = document.getElementById('recordButton');
 const playback = document.getElementById('playback');
@@ -42,6 +45,7 @@ function loadSettings() {
   if (saved.scale !== undefined) scaleSelect.value = saved.scale;
   if (saved.strength !== undefined) strengthSlider.value = saved.strength;
   if (saved.mix !== undefined) mixSlider.value = saved.mix;
+  if (saved.retune !== undefined) retuneSlider.value = saved.retune;
   if (saved.bypass !== undefined) bypassCheckbox.checked = saved.bypass;
 }
 
@@ -54,6 +58,7 @@ function saveSettings() {
         scale: scaleSelect.value,
         strength: strengthSlider.value,
         mix: mixSlider.value,
+        retune: retuneSlider.value,
         bypass: bypassCheckbox.checked,
       })
     );
@@ -135,6 +140,7 @@ function sendParams() {
     root: Number(keySelect.value),
     scale: scaleSelect.value,
     strength: Number(strengthSlider.value) / 100,
+    retuneSpeed: Number(retuneSlider.value) / 100,
     enabled: true,
   });
 }
@@ -200,6 +206,7 @@ async function start() {
     if (msg.type === 'pitch') {
       detectedEl.textContent = `Detected: ${midiToNoteName(msg.detectedMidi)} (${msg.detectedFreq.toFixed(1)} Hz)`;
       targetEl.textContent = `Target: ${midiToNoteName(msg.targetMidi)} (${msg.targetFreq.toFixed(1)} Hz)`;
+      updateTuner(msg.detectedFreq, msg.targetFreq);
       if (detecting) {
         const pc = ((Math.round(msg.detectedMidi) % 12) + 12) % 12;
         keyHistogram[pc]++;
@@ -207,6 +214,7 @@ async function start() {
     } else if (msg.type === 'silence') {
       detectedEl.textContent = 'Detected: —';
       targetEl.textContent = 'Target: —';
+      updateTuner(null, null);
     }
   };
 
@@ -444,11 +452,31 @@ function updateStrengthLabel() {
   strengthValue.textContent = `${strengthSlider.value}%`;
 }
 
+function updateRetuneLabel() {
+  retuneValue.textContent = `${retuneSlider.value}%`;
+}
+
+// Move the tuning-meter needle to show how far the detected pitch sits from the
+// target note, in cents (clamped to +/-50). Green when essentially in tune.
+function updateTuner(detectedFreq, targetFreq) {
+  if (!detectedFreq || !targetFreq) {
+    tunerNeedle.style.left = '50%';
+    tunerNeedle.style.opacity = '0.35';
+    tunerNeedle.classList.remove('in-tune');
+    return;
+  }
+  let cents = 1200 * Math.log2(detectedFreq / targetFreq);
+  cents = Math.max(-50, Math.min(50, cents));
+  tunerNeedle.style.left = `${50 + cents}%`;
+  tunerNeedle.style.opacity = '1';
+  tunerNeedle.classList.toggle('in-tune', Math.abs(cents) < 8);
+}
+
 // --- Presets: one-click sensible combinations of strength + mix ---
 const PRESETS = {
-  subtle: { strength: 40, mix: 90 },
-  pop: { strength: 75, mix: 100 },
-  hard: { strength: 100, mix: 100 },
+  subtle: { strength: 40, mix: 90, retune: 30 },
+  pop: { strength: 75, mix: 100, retune: 60 },
+  hard: { strength: 100, mix: 100, retune: 100 },
 };
 
 function applyPreset(name) {
@@ -456,8 +484,10 @@ function applyPreset(name) {
   if (!preset) return;
   strengthSlider.value = preset.strength;
   mixSlider.value = preset.mix;
+  retuneSlider.value = preset.retune;
   bypassCheckbox.checked = false;
   updateStrengthLabel();
+  updateRetuneLabel();
   updateMix();
   sendParams();
   saveSettings();
@@ -596,6 +626,12 @@ strengthSlider.addEventListener('input', () => {
   clearActivePreset();
   updateGuidance();
 });
+retuneSlider.addEventListener('input', () => {
+  updateRetuneLabel();
+  sendParams();
+  saveSettings();
+  clearActivePreset();
+});
 mixSlider.addEventListener('input', () => {
   updateMix();
   saveSettings();
@@ -609,6 +645,7 @@ bypassCheckbox.addEventListener('change', () => {
 
 loadSettings();
 updateStrengthLabel();
+updateRetuneLabel();
 updateMix();
 updateGuidance();
 resizeCanvas();

@@ -48,6 +48,11 @@
       </div>
 
       <div class="control-group">
+        <label for="retune">Retune Speed <span id="retuneValue" class="value">60%</span></label>
+        <input type="range" id="retune" min="0" max="100" value="60" />
+      </div>
+
+      <div class="control-group">
         <label for="mix">Wet / Dry Mix <span id="mixValue" class="value">100%</span></label>
         <input type="range" id="mix" min="0" max="100" value="100" />
       </div>
@@ -82,6 +87,15 @@
         <span id="detected">Detected: —</span>
         <span id="target">Target: —</span>
       </div>
+
+      <div class="tuner">
+        <div class="tuner-track">
+          <div class="tuner-center"></div>
+          <div id="tunerNeedle" class="tuner-needle"></div>
+        </div>
+        <div class="tuner-labels"><span>♭ flat</span><span>in tune</span><span>sharp ♯</span></div>
+      </div>
+
       <canvas id="visualizer"></canvas>
 
       <div class="upload">
