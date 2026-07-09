@@ -56,6 +56,11 @@ h1 {
   color: #94a3b8;
 }
 
+.value {
+  color: #7dd3fc;
+  font-variant-numeric: tabular-nums;
+}
+
 select,
 input[type='range'] {
   width: 100%;

@@ -15,6 +15,8 @@ const keySelect = document.getElementById('key');
 const scaleSelect = document.getElementById('scale');
 const strengthSlider = document.getElementById('strength');
 const mixSlider = document.getElementById('mix');
+const strengthValue = document.getElementById('strengthValue');
+const mixValue = document.getElementById('mixValue');
 const canvas = document.getElementById('visualizer');
 const canvasCtx = canvas.getContext('2d');
 
@@ -76,6 +78,10 @@ function sendParams() {
 }
 
 async function start() {
+  // Guard against re-entrancy (e.g. a fast second click) during async setup.
+  startButton.disabled = true;
+  statusEl.textContent = 'Requesting microphone access…';
+
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: {
@@ -85,13 +91,17 @@ async function start() {
         channelCount: 1,
       },
     });
+
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    // Browsers may start the context suspended until a user gesture resumes it.
+    if (audioContext.state === 'suspended') await audioContext.resume();
+    await audioContext.audioWorklet.addModule('pitch-processor.js');
   } catch (err) {
-    statusEl.textContent = `Microphone access denied or unavailable: ${err.message}`;
+    statusEl.textContent = `Could not start audio: ${err.message}`;
+    stop();
+    startButton.disabled = false;
     return;
   }
-
-  audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  await audioContext.audioWorklet.addModule('pitch-processor.js');
 
   const source = audioContext.createMediaStreamSource(mediaStream);
   pitchNode = new AudioWorkletNode(audioContext, 'pitch-processor', {
@@ -131,6 +141,7 @@ async function start() {
   running = true;
   statusEl.textContent = 'Listening — sing into the mic. Use headphones to avoid feedback.';
   startButton.textContent = 'Stop';
+  startButton.disabled = false;
   resizeCanvas();
   drawVisualizer();
 }
@@ -153,13 +164,19 @@ function stop() {
   detectedEl.textContent = 'Detected: —';
   targetEl.textContent = 'Target: —';
   startButton.textContent = 'Start';
+  startButton.disabled = false;
 }
 
 function updateMix() {
+  mixValue.textContent = `${mixSlider.value}%`;
   if (!dryGain || !wetGain) return;
   const mix = Number(mixSlider.value) / 100;
   dryGain.gain.value = 1 - mix;
   wetGain.gain.value = mix;
+}
+
+function updateStrengthLabel() {
+  strengthValue.textContent = `${strengthSlider.value}%`;
 }
 
 startButton.addEventListener('click', () => {
@@ -169,7 +186,10 @@ startButton.addEventListener('click', () => {
 
 keySelect.addEventListener('change', sendParams);
 scaleSelect.addEventListener('change', sendParams);
-strengthSlider.addEventListener('input', sendParams);
+strengthSlider.addEventListener('input', () => {
+  updateStrengthLabel();
+  sendParams();
+});
 mixSlider.addEventListener('input', updateMix);
 
 resizeCanvas();
