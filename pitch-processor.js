@@ -68,9 +68,15 @@ class PitchProcessor extends AudioWorkletProcessor {
     this.nsdf = new Float32Array(ANALYSIS_WINDOW); // scratch for pitch detection
     this.samplesSinceAnalysis = 0;
 
+    // Each grain tracks its own read pointer (readPos), advanced by the shift
+    // ratio one sample at a time. Deriving the read position incrementally —
+    // rather than as basePos + age * ratio — is what keeps the output smooth
+    // when the ratio changes: a ratio change nudges the pointer by a fraction
+    // of a sample instead of by (age * Δratio), which used to click loudly
+    // mid-grain (right where the window is largest) whenever the pitch moved.
     this.grains = [
-      { age: 0, basePos: 0 },
-      { age: HOP, basePos: 0 },
+      { age: 0, readPos: 0 },
+      { age: HOP, readPos: 0 },
     ];
 
     this.currentRatio = 1;
@@ -226,13 +232,15 @@ class PitchProcessor extends AudioWorkletProcessor {
 
       let out = 0;
       for (const grain of this.grains) {
-        const readPos = grain.basePos + grain.age * ratio;
         const w = hann(grain.age / GRAIN_LEN);
-        out += this.readRing(readPos) * w;
+        out += this.readRing(grain.readPos) * w;
+        grain.readPos += ratio;
         grain.age++;
         if (grain.age >= GRAIN_LEN) {
+          // Restart the grain on a fresh, recent chunk of input. age is 0 here
+          // so its window is 0 — the read-pointer jump makes no audible click.
           grain.age = 0;
-          grain.basePos = this.writeIndex - GRAIN_LEN;
+          grain.readPos = this.writeIndex - GRAIN_LEN;
         }
       }
 
