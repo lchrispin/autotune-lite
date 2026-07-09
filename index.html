@@ -73,9 +73,12 @@
       <canvas id="visualizer"></canvas>
 
       <div id="playback" class="playback hidden">
-        <p class="playback-label">Last recording</p>
+        <p id="playbackLabel" class="playback-label">Last recording</p>
         <audio id="playbackAudio" controls></audio>
-        <a id="downloadLink" download="autotune-recording.webm">Download</a>
+        <div class="playback-actions">
+          <button id="retuneButton" disabled>Re-tune with current settings</button>
+          <a id="downloadLink" download="autotune-recording.webm">Download</a>
+        </div>
       </div>
     </section>
 

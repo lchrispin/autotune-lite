@@ -20,8 +20,10 @@ const mixValue = document.getElementById('mixValue');
 const bypassCheckbox = document.getElementById('bypass');
 const recordButton = document.getElementById('recordButton');
 const playback = document.getElementById('playback');
+const playbackLabel = document.getElementById('playbackLabel');
 const playbackAudio = document.getElementById('playbackAudio');
 const downloadLink = document.getElementById('downloadLink');
+const retuneButton = document.getElementById('retuneButton');
 
 const STORAGE_KEY = 'autotune-lite-settings';
 
@@ -71,6 +73,14 @@ let recordDest = null;
 let mediaRecorder = null;
 let recordedChunks = [];
 let recordedUrl = null;
+
+// Raw (dry) capture kept alongside the corrected take, so a performance can be
+// re-tuned offline with different key/scale/strength settings.
+let rawDest = null;
+let rawRecorder = null;
+let rawChunks = [];
+let rawBlob = null;
+let retunedUrl = null;
 
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
@@ -170,6 +180,10 @@ async function start() {
   recordDest = audioContext.createMediaStreamDestination();
   analyser.connect(recordDest);
 
+  // Also tap the raw mic (pre-gain) so a take can be re-tuned offline later.
+  rawDest = audioContext.createMediaStreamDestination();
+  source.connect(rawDest);
+
   updateMix();
 
   pitchNode.port.onmessage = (event) => {
@@ -222,11 +236,29 @@ function startRecording() {
     const blob = new Blob(recordedChunks, { type });
     if (recordedUrl) URL.revokeObjectURL(recordedUrl);
     recordedUrl = URL.createObjectURL(blob);
+    playbackLabel.textContent = 'Last recording';
     playbackAudio.src = recordedUrl;
     downloadLink.href = recordedUrl;
     downloadLink.download = `autotune-recording.${type.includes('mp4') ? 'mp4' : type.includes('ogg') ? 'ogg' : 'webm'}`;
     playback.classList.remove('hidden');
   };
+
+  // Capture the raw (dry) mic in parallel for offline re-tuning.
+  rawChunks = [];
+  try {
+    rawRecorder = new MediaRecorder(rawDest.stream, mimeType ? { mimeType } : undefined);
+    const raw = rawRecorder;
+    raw.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) rawChunks.push(event.data);
+    };
+    raw.onstop = () => {
+      rawBlob = new Blob(rawChunks, { type: raw.mimeType || mimeType || 'audio/webm' });
+      retuneButton.disabled = false;
+    };
+    raw.start();
+  } catch {
+    rawRecorder = null; // re-tune simply stays unavailable if this fails
+  }
 
   recorder.start();
   recordButton.textContent = '■ Stop Recording';
@@ -236,7 +268,9 @@ function startRecording() {
 
 function stopRecording() {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  if (rawRecorder && rawRecorder.state !== 'inactive') rawRecorder.stop();
   mediaRecorder = null;
+  rawRecorder = null;
   recordButton.textContent = '● Record';
   recordButton.classList.remove('recording');
 }
@@ -246,11 +280,98 @@ function toggleRecord() {
   else startRecording();
 }
 
+// Render a mono AudioBuffer to a 16-bit PCM WAV blob (OfflineAudioContext
+// hands back raw samples, so we encode them ourselves — no dependencies).
+function audioBufferToWav(buffer) {
+  const samples = buffer.getChannelData(0);
+  const n = samples.length;
+  const sr = buffer.sampleRate;
+  const dataSize = n * 2;
+  const ab = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(ab);
+  const writeStr = (off, s) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
+  };
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true); // fmt chunk size
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sr, true);
+  view.setUint32(28, sr * 2, true); // byte rate
+  view.setUint16(32, 2, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
+  writeStr(36, 'data');
+  view.setUint32(40, dataSize, true);
+  let off = 44;
+  for (let i = 0; i < n; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    off += 2;
+  }
+  return new Blob([ab], { type: 'audio/wav' });
+}
+
+// Re-run the raw take through the pitch worklet offline with the *current*
+// key/scale/strength, so a performance can be re-tuned without re-singing.
+async function retune() {
+  if (!rawBlob) return;
+  retuneButton.disabled = true;
+  const label = retuneButton.textContent;
+  retuneButton.textContent = 'Re-tuning…';
+  let decodeCtx = null;
+  try {
+    const arrayBuf = await rawBlob.arrayBuffer();
+    decodeCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const audioBuffer = await decodeCtx.decodeAudioData(arrayBuf);
+
+    const offline = new OfflineAudioContext(1, audioBuffer.length, audioBuffer.sampleRate);
+    await offline.audioWorklet.addModule('pitch-processor.js');
+    const srcNode = offline.createBufferSource();
+    srcNode.buffer = audioBuffer;
+    const node = new AudioWorkletNode(offline, 'pitch-processor', {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+    });
+    node.port.postMessage({
+      type: 'params',
+      root: Number(keySelect.value),
+      scale: scaleSelect.value,
+      strength: Number(strengthSlider.value) / 100,
+      enabled: true,
+    });
+    srcNode.connect(node);
+    node.connect(offline.destination);
+    srcNode.start();
+
+    const rendered = await offline.startRendering();
+    const wavBlob = audioBufferToWav(rendered);
+    if (retunedUrl) URL.revokeObjectURL(retunedUrl);
+    retunedUrl = URL.createObjectURL(wavBlob);
+    playbackAudio.src = retunedUrl;
+    downloadLink.href = retunedUrl;
+    downloadLink.download = 'autotune-retuned.wav';
+    const keyName = NOTE_NAMES[Number(keySelect.value)];
+    playbackLabel.textContent = `Re-tuned — ${keyName} ${scaleSelect.value}`;
+    playback.classList.remove('hidden');
+  } catch (err) {
+    statusEl.textContent = `Re-tune failed: ${err.message}`;
+  } finally {
+    if (decodeCtx) decodeCtx.close();
+    retuneButton.textContent = label;
+    retuneButton.disabled = false;
+  }
+}
+
 function stop() {
   running = false;
   stopRecording();
   recordButton.disabled = true;
   recordDest = null;
+  rawDest = null;
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
   if (mediaStream) {
     mediaStream.getTracks().forEach((track) => track.stop());
@@ -289,6 +410,7 @@ startButton.addEventListener('click', () => {
 });
 
 recordButton.addEventListener('click', toggleRecord);
+retuneButton.addEventListener('click', retune);
 
 keySelect.addEventListener('change', () => {
   sendParams();
