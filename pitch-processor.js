@@ -20,6 +20,8 @@ const ANALYSIS_HOP = 1024;
 const MIN_FREQ = 80; // Hz, autocorrelation search floor
 const MAX_FREQ = 1000; // Hz, autocorrelation search ceiling
 const SILENCE_RMS = 0.01;
+const CLARITY_THRESHOLD = 0.5; // min normalized correlation to accept a pitch
+const PEAK_PICK_RATIO = 0.9; // accept first NSDF peak >= this fraction of the max
 const RATIO_MIN = 0.5;
 const RATIO_MAX = 2.0;
 const RATIO_SMOOTHING = 0.25; // per-block lerp toward target ratio
@@ -63,6 +65,7 @@ class PitchProcessor extends AudioWorkletProcessor {
     this.writeIndex = 0;
 
     this.analysisBuf = new Float32Array(ANALYSIS_WINDOW);
+    this.nsdf = new Float32Array(ANALYSIS_WINDOW); // scratch for pitch detection
     this.samplesSinceAnalysis = 0;
 
     this.grains = [
@@ -101,40 +104,54 @@ class PitchProcessor extends AudioWorkletProcessor {
     const minLag = Math.max(2, Math.floor(sampleRate / MAX_FREQ));
     const maxLag = Math.min(size - 1, Math.floor(sampleRate / MIN_FREQ));
 
-    let bestLag = -1;
-    let bestCorr = 0;
+    // Normalized square-difference function (NSDF, McLeod). Dividing by the
+    // local energy keeps each score in [-1, 1] and removes the short-lag bias
+    // of raw autocorrelation.
+    const nsdf = this.nsdf;
+    let maxScore = 0;
     for (let lag = minLag; lag <= maxLag; lag++) {
       let corr = 0;
+      let energy = 0;
       const limit = size - lag;
       for (let i = 0; i < limit; i++) {
-        corr += buf[i] * buf[i + lag];
+        const a = buf[i];
+        const b = buf[i + lag];
+        corr += a * b;
+        energy += a * a + b * b;
       }
-      if (corr > bestCorr) {
-        bestCorr = corr;
+      const score = energy > 0 ? (2 * corr) / energy : 0;
+      nsdf[lag] = score;
+      if (score > maxScore) maxScore = score;
+    }
+
+    // Reject weak/noisy peaks: a real pitched note correlates strongly with
+    // itself one period later, so a low peak means "no clear pitch".
+    if (maxScore < CLARITY_THRESHOLD) return -1;
+
+    // Peak-pick the *first* local maximum that clears a fraction of the tallest
+    // peak. Choosing the earliest (shortest-period) qualifying peak — rather
+    // than the global max — avoids sub-octave errors, since a clean tone peaks
+    // near 1.0 at every multiple of its true period.
+    const threshold = PEAK_PICK_RATIO * maxScore;
+    let bestLag = -1;
+    for (let lag = minLag + 1; lag < maxLag; lag++) {
+      if (nsdf[lag] >= threshold && nsdf[lag] > nsdf[lag - 1] && nsdf[lag] >= nsdf[lag + 1]) {
         bestLag = lag;
+        break;
       }
     }
+    if (bestLag < 0) return -1;
 
-    if (bestLag <= minLag || bestLag >= maxLag) {
-      if (bestLag === -1) return -1;
-    }
-
-    // Parabolic interpolation around the best lag for a finer estimate.
+    // Parabolic interpolation over the NSDF around the chosen peak for a
+    // sub-sample lag estimate.
     let refinedLag = bestLag;
-    if (bestLag > minLag && bestLag < maxLag) {
-      const corrAt = (lag) => {
-        let c = 0;
-        const limit = size - lag;
-        for (let i = 0; i < limit; i++) c += buf[i] * buf[i + lag];
-        return c;
-      };
-      const cPrev = corrAt(bestLag - 1);
-      const cNext = corrAt(bestLag + 1);
-      const denom = cPrev - 2 * bestCorr + cNext;
-      if (denom !== 0) {
-        const shift = (0.5 * (cPrev - cNext)) / denom;
-        if (Math.abs(shift) < 1) refinedLag = bestLag + shift;
-      }
+    const cPrev = nsdf[bestLag - 1];
+    const cCurr = nsdf[bestLag];
+    const cNext = nsdf[bestLag + 1];
+    const denom = cPrev - 2 * cCurr + cNext;
+    if (denom !== 0) {
+      const shift = (0.5 * (cPrev - cNext)) / denom;
+      if (Math.abs(shift) < 1) refinedLag = bestLag + shift;
     }
 
     if (refinedLag <= 0) return -1;

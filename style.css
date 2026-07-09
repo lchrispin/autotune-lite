@@ -61,6 +61,20 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+.control-group--checkbox {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+}
+
+.control-group--checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
 select,
 input[type='range'] {
   width: 100%;
