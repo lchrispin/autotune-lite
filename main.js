@@ -75,6 +75,8 @@ let pitchNode = null;
 let analyser = null;
 let dryGain = null;
 let wetGain = null;
+let dryDelay = null;
+let compressor = null;
 let animationFrameId = null;
 let running = false;
 
@@ -145,6 +147,38 @@ function sendParams() {
   });
 }
 
+// Total processing delay of the PSOLA worklet, in samples: its grain-source
+// latency (1024) plus the synthesis look-ahead (max pitch period + 128).
+// Mirrors LATENCY/AHEAD in pitch-processor.js — keep the two in sync.
+function workletLatencySamples(sr) {
+  return 1024 + Math.ceil(sr / 80) + 128;
+}
+
+// Shared "vocal polish" chain: a gentle high-pass to cut mic rumble and
+// plosive thumps, and light compression to even out levels (we ask the
+// browser not to auto-gain) with a touch of makeup gain. Used identically in
+// the live graph and the offline re-tune render so both sound the same.
+function createHighpass(ctx) {
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 70;
+  hp.Q.value = 0.707;
+  return hp;
+}
+
+function createPolishChain(ctx) {
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -24;
+  comp.knee.value = 24;
+  comp.ratio.value = 3;
+  comp.attack.value = 0.003;
+  comp.release.value = 0.25;
+  const makeup = ctx.createGain();
+  makeup.gain.value = 1.25;
+  comp.connect(makeup);
+  return { input: comp, output: makeup };
+}
+
 async function start() {
   // Guard against re-entrancy (e.g. a fast second click) during async setup.
   startButton.disabled = true;
@@ -153,9 +187,13 @@ async function start() {
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        // Speech-call DSP audibly degrades singing — echo cancellation and
+        // noise suppression gate note tails and dull the highs, and auto gain
+        // pumps sustained notes. Ask for the raw feed; headphones (which the
+        // UI already tells the user to wear) take care of feedback.
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
         channelCount: 1,
       },
     });
@@ -172,6 +210,9 @@ async function start() {
   }
 
   const source = audioContext.createMediaStreamSource(mediaStream);
+  const highpass = createHighpass(audioContext);
+  source.connect(highpass);
+
   pitchNode = new AudioWorkletNode(audioContext, 'pitch-processor', {
     numberOfInputs: 1,
     numberOfOutputs: 1,
@@ -180,24 +221,32 @@ async function start() {
 
   dryGain = audioContext.createGain();
   wetGain = audioContext.createGain();
+  // Delay the dry path to match the worklet's processing latency, so blending
+  // wet and dry sounds like a doubled voice instead of a slapback echo.
+  dryDelay = audioContext.createDelay(0.25);
+  dryDelay.delayTime.value = workletLatencySamples(audioContext.sampleRate) / audioContext.sampleRate;
   analyser = audioContext.createAnalyser();
   analyser.fftSize = 2048;
 
-  source.connect(dryGain);
-  source.connect(pitchNode);
+  highpass.connect(dryDelay);
+  dryDelay.connect(dryGain);
+  highpass.connect(pitchNode);
   pitchNode.connect(wetGain);
 
-  dryGain.connect(analyser);
-  wetGain.connect(analyser);
+  const polish = createPolishChain(audioContext);
+  compressor = polish.input;
+  dryGain.connect(polish.input);
+  wetGain.connect(polish.input);
+  polish.output.connect(analyser);
   analyser.connect(audioContext.destination);
 
   // Tap the same mixed signal the user hears so recordings capture correction.
   recordDest = audioContext.createMediaStreamDestination();
   analyser.connect(recordDest);
 
-  // Also tap the raw mic (pre-gain) so a take can be re-tuned offline later.
+  // Also tap the uncorrected mic so a take can be re-tuned offline later.
   rawDest = audioContext.createMediaStreamDestination();
-  source.connect(rawDest);
+  highpass.connect(rawDest);
 
   updateMix();
 
@@ -321,12 +370,10 @@ function handleFileUpload(event) {
   statusEl.textContent = 'File loaded. Pick a key/scale/strength, then click Re-tune.';
 }
 
-// Render a mono AudioBuffer to a 16-bit PCM WAV blob (OfflineAudioContext
-// hands back raw samples, so we encode them ourselves — no dependencies).
-function audioBufferToWav(buffer) {
-  const samples = buffer.getChannelData(0);
+// Render mono samples to a 16-bit PCM WAV blob (OfflineAudioContext hands
+// back raw samples, so we encode them ourselves — no dependencies).
+function samplesToWav(samples, sr) {
   const n = samples.length;
-  const sr = buffer.sampleRate;
   const dataSize = n * 2;
   const ab = new ArrayBuffer(44 + dataSize);
   const view = new DataView(ab);
@@ -368,7 +415,15 @@ async function retune() {
     decodeCtx = new (window.AudioContext || window.webkitAudioContext)();
     const audioBuffer = await decodeCtx.decodeAudioData(arrayBuf);
 
-    const offline = new OfflineAudioContext(1, audioBuffer.length, audioBuffer.sampleRate);
+    // Render extra samples to cover the worklet's processing latency, then
+    // trim them off the front — the retuned take lines up with the original
+    // and keeps its full tail instead of starting with a gap.
+    const latencySamples = workletLatencySamples(audioBuffer.sampleRate);
+    const offline = new OfflineAudioContext(
+      1,
+      audioBuffer.length + latencySamples,
+      audioBuffer.sampleRate
+    );
     await offline.audioWorklet.addModule('pitch-processor.js');
     const srcNode = offline.createBufferSource();
     srcNode.buffer = audioBuffer;
@@ -382,14 +437,21 @@ async function retune() {
       root: Number(keySelect.value),
       scale: scaleSelect.value,
       strength: Number(strengthSlider.value) / 100,
+      retuneSpeed: Number(retuneSlider.value) / 100,
       enabled: true,
     });
-    srcNode.connect(node);
-    node.connect(offline.destination);
+    // Same high-pass + polish chain as the live graph, so an offline re-tune
+    // sounds like what the user heard while singing.
+    const highpass = createHighpass(offline);
+    const polish = createPolishChain(offline);
+    srcNode.connect(highpass);
+    highpass.connect(node);
+    node.connect(polish.input);
+    polish.output.connect(offline.destination);
     srcNode.start();
 
     const rendered = await offline.startRendering();
-    const wavBlob = audioBufferToWav(rendered);
+    const wavBlob = samplesToWav(rendered.getChannelData(0).subarray(latencySamples), rendered.sampleRate);
     if (retunedUrl) URL.revokeObjectURL(retunedUrl);
     retunedUrl = URL.createObjectURL(wavBlob);
     playbackAudio.src = retunedUrl;
@@ -431,6 +493,8 @@ function stop() {
   }
   pitchNode = null;
   analyser = null;
+  dryDelay = null;
+  compressor = null;
   canvasCtx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
   statusEl.textContent = 'Stopped.';
   detectedEl.textContent = 'Detected: —';

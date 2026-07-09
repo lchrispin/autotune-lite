@@ -6,16 +6,31 @@ snapped to the nearest note in a chosen key and scale.
 
 ## How it works
 
-- **Pitch detection**: an `AudioWorkletProcessor` runs autocorrelation over
-  short analysis windows to estimate your voice's fundamental frequency.
+- **Clean capture**: the mic is opened with the browser's speech-call
+  processing (echo cancellation, noise suppression, auto gain) turned **off** —
+  those are designed for phone calls and audibly mangle singing. A gentle
+  70 Hz high-pass removes rumble and plosive thumps.
+- **Pitch detection**: an `AudioWorkletProcessor` runs normalized
+  autocorrelation (NSDF) over short analysis windows to estimate your voice's
+  fundamental frequency. The track is conditioned with a median filter (so a
+  single glitched frame can't cause an audible chirp) and DC removal.
 - **Note snapping**: the detected pitch is mapped to the nearest note in the
-  selected key/scale (Chromatic, Major, or Minor).
+  selected key/scale (Chromatic, Major, or Minor), with **hysteresis** — once
+  a target note is chosen it's held until your pitch moves decisively toward a
+  different note, so singing near the boundary between two notes doesn't
+  warble back and forth. Correction strength is applied in cents (log
+  frequency), so 50% strength always closes half the musical distance.
 - **Pitch shifting**: time-domain **PSOLA** (pitch-synchronous overlap-add)
   moves the voice onto the target note. It extracts two-period, Hann-windowed
   grains on a pitch-locked grid and overlap-adds them at the target period, so
   adjacent grains stay in phase — the note lands on pitch cleanly instead of
   being partially corrected and warbly. Still a lightweight demo, not a
   studio-grade vocal processor, but the correction is now clearly audible.
+- **Vocal polish**: the mixed output runs through light compression
+  (3:1, soft knee) with a touch of makeup gain, evening out levels and adding
+  a produced sheen. The dry path is delayed to match the pitch engine's
+  latency, so intermediate Wet/Dry mixes sound like a doubled voice rather
+  than a slapback echo.
 
 No build step, no npm dependencies — just static files and the Web Audio
 API.
@@ -78,10 +93,13 @@ playback player with a **Download** link. Recording uses the browser's
 ### Re-tuning a take
 
 Each recording also captures your **raw (dry) voice** in the background. Change
-the key, scale, or correction strength, then click **Re-tune with current
-settings** to re-run that same performance through the pitch engine offline —
-no need to sing it again. Re-tuning renders through an `OfflineAudioContext`
-and produces a downloadable WAV, so you can quickly A/B the same take in
+the key, scale, correction strength, or retune speed, then click **Re-tune with
+current settings** to re-run that same performance through the pitch engine
+offline — no need to sing it again. Re-tuning renders through an
+`OfflineAudioContext` using the exact same processing chain you hear live
+(high-pass, pitch engine, polish compression), compensates for the engine's
+latency so the result lines up with the original from the first sample, and
+produces a downloadable WAV — so you can quickly A/B the same take in
 different keys.
 
 You don't have to record here to use this: pick any audio file with **Or
