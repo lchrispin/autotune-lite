@@ -45,6 +45,14 @@ from your speakers and cause feedback/echo.
 All control settings are remembered in `localStorage`, so they persist across
 page reloads.
 
+## Recording
+
+While listening, click **● Record** to capture your take, then **■ Stop
+Recording** to finish. The recording captures the same mixed signal you hear —
+so the autotune correction is baked in — and appears below the visualizer as a
+playback player with a **Download** link. Recording uses the browser's
+`MediaRecorder` (WebM/Opus where supported, with MP4/Ogg fallbacks).
+
 ## Browser support
 
 Requires a browser with `AudioWorklet` support (current Chrome, Edge,

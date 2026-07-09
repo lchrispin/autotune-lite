@@ -18,6 +18,10 @@ const mixSlider = document.getElementById('mix');
 const strengthValue = document.getElementById('strengthValue');
 const mixValue = document.getElementById('mixValue');
 const bypassCheckbox = document.getElementById('bypass');
+const recordButton = document.getElementById('recordButton');
+const playback = document.getElementById('playback');
+const playbackAudio = document.getElementById('playbackAudio');
+const downloadLink = document.getElementById('downloadLink');
 
 const STORAGE_KEY = 'autotune-lite-settings';
 
@@ -62,6 +66,11 @@ let dryGain = null;
 let wetGain = null;
 let animationFrameId = null;
 let running = false;
+
+let recordDest = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let recordedUrl = null;
 
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
@@ -157,6 +166,10 @@ async function start() {
   wetGain.connect(analyser);
   analyser.connect(audioContext.destination);
 
+  // Tap the same mixed signal the user hears so recordings capture correction.
+  recordDest = audioContext.createMediaStreamDestination();
+  analyser.connect(recordDest);
+
   updateMix();
 
   pitchNode.port.onmessage = (event) => {
@@ -176,12 +189,68 @@ async function start() {
   statusEl.textContent = 'Listening — sing into the mic. Use headphones to avoid feedback.';
   startButton.textContent = 'Stop';
   startButton.disabled = false;
+  recordButton.disabled = false;
   resizeCanvas();
   drawVisualizer();
 }
 
+function pickRecordingMime() {
+  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
+}
+
+function startRecording() {
+  if (!recordDest || (mediaRecorder && mediaRecorder.state === 'recording')) return;
+
+  const mimeType = pickRecordingMime();
+  let recorder;
+  try {
+    recorder = new MediaRecorder(recordDest.stream, mimeType ? { mimeType } : undefined);
+  } catch (err) {
+    statusEl.textContent = `Recording unavailable: ${err.message}`;
+    return;
+  }
+  mediaRecorder = recorder;
+
+  recordedChunks = [];
+  recorder.ondataavailable = (event) => {
+    if (event.data && event.data.size > 0) recordedChunks.push(event.data);
+  };
+  recorder.onstop = () => {
+    const type = recorder.mimeType || mimeType || 'audio/webm';
+    const blob = new Blob(recordedChunks, { type });
+    if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+    recordedUrl = URL.createObjectURL(blob);
+    playbackAudio.src = recordedUrl;
+    downloadLink.href = recordedUrl;
+    downloadLink.download = `autotune-recording.${type.includes('mp4') ? 'mp4' : type.includes('ogg') ? 'ogg' : 'webm'}`;
+    playback.classList.remove('hidden');
+  };
+
+  recorder.start();
+  recordButton.textContent = '■ Stop Recording';
+  recordButton.classList.add('recording');
+  statusEl.textContent = 'Recording… sing your take.';
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  mediaRecorder = null;
+  recordButton.textContent = '● Record';
+  recordButton.classList.remove('recording');
+}
+
+function toggleRecord() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') stopRecording();
+  else startRecording();
+}
+
 function stop() {
   running = false;
+  stopRecording();
+  recordButton.disabled = true;
+  recordDest = null;
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
   if (mediaStream) {
     mediaStream.getTracks().forEach((track) => track.stop());
@@ -218,6 +287,8 @@ startButton.addEventListener('click', () => {
   if (running) stop();
   else start();
 });
+
+recordButton.addEventListener('click', toggleRecord);
 
 keySelect.addEventListener('change', () => {
   sendParams();

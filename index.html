@@ -61,13 +61,22 @@
     </section>
 
     <section class="stage">
-      <button id="startButton">Start</button>
+      <div class="buttons">
+        <button id="startButton">Start</button>
+        <button id="recordButton" disabled>● Record</button>
+      </div>
       <p id="status" class="status">Click Start and allow microphone access.</p>
       <div class="notes">
         <span id="detected">Detected: —</span>
         <span id="target">Target: —</span>
       </div>
       <canvas id="visualizer"></canvas>
+
+      <div id="playback" class="playback hidden">
+        <p class="playback-label">Last recording</p>
+        <audio id="playbackAudio" controls></audio>
+        <a id="downloadLink" download="autotune-recording.webm">Download</a>
+      </div>
     </section>
 
     <footer>
