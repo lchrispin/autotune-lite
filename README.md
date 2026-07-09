@@ -45,7 +45,10 @@ Then open http://localhost:8080 in Chrome, Edge, or Firefox, click **Start**,
 and allow microphone access.
 
 **Use headphones** — otherwise the mic will pick up the autotuned output
-from your speakers and cause feedback/echo.
+from your speakers and cause feedback/echo. No headphones handy? Untick
+**Live monitor** instead: the speakers stay silent (so no feedback), while the
+tuner, visualizer, and recording keep running on the corrected signal — record
+your take, then play it back to hear the result.
 
 ## Controls
 
@@ -61,6 +64,9 @@ from your speakers and cause feedback/echo.
 - **Wet / Dry Mix** — blend between your raw voice and the autotuned signal.
 - **Bypass** — instantly hear your raw voice (ignores the mix slider), handy
   for A/B-ing the effect on and off.
+- **Live monitor** — toggles speaker output. Turn it off to sing without
+  headphones: no feedback, the tuner and visualizer keep working, and
+  recordings still capture the autotuned voice.
 - **Presets** — one-click starting points: **Subtle** (gentle, natural),
   **Pop** (noticeable but musical), **Hard Tune** (full robotic snap). They set
   the strength, mix, and retune speed for you; tweak a slider afterwards to

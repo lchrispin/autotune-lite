@@ -21,6 +21,7 @@ const retuneSlider = document.getElementById('retune');
 const retuneValue = document.getElementById('retuneValue');
 const tunerNeedle = document.getElementById('tunerNeedle');
 const bypassCheckbox = document.getElementById('bypass');
+const monitorCheckbox = document.getElementById('monitor');
 const recordButton = document.getElementById('recordButton');
 const playback = document.getElementById('playback');
 const playbackLabel = document.getElementById('playbackLabel');
@@ -47,6 +48,7 @@ function loadSettings() {
   if (saved.mix !== undefined) mixSlider.value = saved.mix;
   if (saved.retune !== undefined) retuneSlider.value = saved.retune;
   if (saved.bypass !== undefined) bypassCheckbox.checked = saved.bypass;
+  if (saved.monitor !== undefined) monitorCheckbox.checked = saved.monitor;
 }
 
 function saveSettings() {
@@ -60,6 +62,7 @@ function saveSettings() {
         mix: mixSlider.value,
         retune: retuneSlider.value,
         bypass: bypassCheckbox.checked,
+        monitor: monitorCheckbox.checked,
       })
     );
   } catch {
@@ -77,6 +80,7 @@ let dryGain = null;
 let wetGain = null;
 let dryDelay = null;
 let compressor = null;
+let monitorGain = null;
 let animationFrameId = null;
 let running = false;
 
@@ -238,9 +242,15 @@ async function start() {
   dryGain.connect(polish.input);
   wetGain.connect(polish.input);
   polish.output.connect(analyser);
-  analyser.connect(audioContext.destination);
+  // Speaker output goes through a mutable monitor gain, so the mic can be used
+  // without headphones (no feedback) while everything upstream — tuner,
+  // visualizer, recording — keeps running on the full corrected signal.
+  monitorGain = audioContext.createGain();
+  analyser.connect(monitorGain);
+  monitorGain.connect(audioContext.destination);
 
-  // Tap the same mixed signal the user hears so recordings capture correction.
+  // Tap the corrected mix upstream of the monitor gain so recordings capture
+  // the tuned voice even when the speakers are muted.
   recordDest = audioContext.createMediaStreamDestination();
   analyser.connect(recordDest);
 
@@ -249,6 +259,7 @@ async function start() {
   highpass.connect(rawDest);
 
   updateMix();
+  updateMonitor();
 
   pitchNode.port.onmessage = (event) => {
     const msg = event.data;
@@ -495,6 +506,7 @@ function stop() {
   analyser = null;
   dryDelay = null;
   compressor = null;
+  monitorGain = null;
   canvasCtx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
   statusEl.textContent = 'Stopped.';
   detectedEl.textContent = 'Detected: —';
@@ -510,6 +522,13 @@ function updateMix() {
   const mix = bypassCheckbox.checked ? 0 : Number(mixSlider.value) / 100;
   dryGain.gain.value = 1 - mix;
   wetGain.gain.value = mix;
+}
+
+function updateMonitor() {
+  if (!monitorGain || !audioContext) return;
+  // Short ramp instead of a hard switch so toggling doesn't click.
+  const target = monitorCheckbox.checked ? 1 : 0;
+  monitorGain.gain.setTargetAtTime(target, audioContext.currentTime, 0.01);
 }
 
 function updateStrengthLabel() {
@@ -587,6 +606,9 @@ function updateGuidance() {
       scale === 'chromatic'
         ? `Hard robotic snap (T-Pain style), ${scaleText}.`
         : `Hard snap, ${scaleText}.`;
+  if (!monitorCheckbox.checked) {
+    amount += ' Speakers muted — you won’t hear yourself, but recordings still capture the tuned voice.';
+  }
   guidanceEl.textContent = amount;
 }
 
@@ -703,6 +725,11 @@ mixSlider.addEventListener('input', () => {
 });
 bypassCheckbox.addEventListener('change', () => {
   updateMix();
+  saveSettings();
+  updateGuidance();
+});
+monitorCheckbox.addEventListener('change', () => {
+  updateMonitor();
   saveSettings();
   updateGuidance();
 });
