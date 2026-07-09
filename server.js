@@ -20,8 +20,9 @@ const server = http.createServer((req, res) => {
   const urlPath = req.url === '/' ? '/index.html' : req.url.split('?')[0];
   const filePath = path.join(__dirname, decodeURIComponent(urlPath));
 
-  // Prevent path traversal outside the project root.
-  if (!filePath.startsWith(__dirname)) {
+  // Prevent path traversal outside the project root. Comparing against
+  // `__dirname + path.sep` avoids matching sibling dirs like "autotune-lite-evil".
+  if (filePath !== __dirname && !filePath.startsWith(__dirname + path.sep)) {
     res.writeHead(403);
     res.end('Forbidden');
     return;
