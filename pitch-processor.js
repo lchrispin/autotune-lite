@@ -19,8 +19,9 @@ const OUTBUF_LEN = 1 << 13; // overlap-add accumulator, ample for grains + laten
 const ANALYSIS_WINDOW = 2048;
 const ANALYSIS_HOP = 1024;
 const MIN_FREQ = 80; // Hz, autocorrelation search floor
-const MAX_FREQ = 1000; // Hz, autocorrelation search ceiling
-const SILENCE_RMS = 0.01;
+const MAX_FREQ = 1100; // Hz, autocorrelation search ceiling (covers soprano C6)
+const SILENCE_RMS = 0.003; // raw mic capture (no auto-gain) sits well below speech-call levels
+const HYSTERESIS_SEMITONES = 0.3; // how much closer a new note must be before the target switches
 const CLARITY_THRESHOLD = 0.5; // min normalized correlation to accept a pitch
 const PEAK_PICK_RATIO = 0.9; // accept first NSDF peak >= this fraction of the max
 const RATIO_MIN = 0.5; // clamp the shift ratio to +/- one octave
@@ -92,6 +93,13 @@ class PitchProcessor extends AudioWorkletProcessor {
     this.currentRatio = 1;
     this.targetRatio = 1;
 
+    // Pitch-track conditioning: recent f0 estimates for median filtering, the
+    // currently held target note for snap hysteresis, and how many analysis
+    // frames in a row have been unvoiced (short dropouts keep the held note).
+    this.f0History = [];
+    this.heldMidi = null;
+    this.unvoicedRun = 0;
+
     this.enabled = true;
     this.rootPc = 0; // C
     this.scaleIntervals = SCALES.chromatic;
@@ -119,8 +127,17 @@ class PitchProcessor extends AudioWorkletProcessor {
 
   detectPitch(buf) {
     const size = buf.length;
+    // Remove DC before correlating — a raw mic feed can carry offset/rumble
+    // that inflates NSDF scores at every lag and produces false pitches.
+    let sum = 0;
+    for (let i = 0; i < size; i++) sum += buf[i];
+    const mean = sum / size;
     let sumSq = 0;
-    for (let i = 0; i < size; i++) sumSq += buf[i] * buf[i];
+    for (let i = 0; i < size; i++) {
+      const centered = buf[i] - mean;
+      buf[i] = centered;
+      sumSq += centered * centered;
+    }
     const rms = Math.sqrt(sumSq / size);
     if (rms < SILENCE_RMS) return -1;
 
@@ -189,15 +206,42 @@ class PitchProcessor extends AudioWorkletProcessor {
       this.analysisBuf[i] = this.ring[idx];
     }
 
-    const f0 = this.detectPitch(this.analysisBuf);
+    let f0 = this.detectPitch(this.analysisBuf);
+
+    if (f0 > 0) {
+      // Median-of-3 over recent estimates rejects single-frame octave/glitch
+      // errors, which otherwise slew the ratio toward a wrong note and chirp.
+      // A real note change still gets through on the second frame (~21ms).
+      this.f0History.push(f0);
+      if (this.f0History.length > 3) this.f0History.shift();
+      if (this.f0History.length === 3) {
+        const s = [this.f0History[0], this.f0History[1], this.f0History[2]].sort((a, b) => a - b);
+        f0 = s[1];
+      }
+    }
 
     if (f0 > 0 && this.enabled) {
       const midi = freqToMidi(f0);
-      const snappedMidi = snapMidiToScale(midi, this.rootPc, this.scaleIntervals);
+      let snappedMidi = snapMidiToScale(midi, this.rootPc, this.scaleIntervals);
+      // Hysteresis: keep the held target note unless the detected pitch is
+      // decisively closer to a different scale note. Without this the target
+      // flickers between neighbours whenever the singer sits near the
+      // boundary, which is audible as a rapid warble/trill.
+      if (
+        this.heldMidi !== null &&
+        snappedMidi !== this.heldMidi &&
+        Math.abs(midi - this.heldMidi) < Math.abs(midi - snappedMidi) + HYSTERESIS_SEMITONES
+      ) {
+        snappedMidi = this.heldMidi;
+      }
+      this.heldMidi = snappedMidi;
+      this.unvoicedRun = 0;
       const targetFreq = midiToFreq(snappedMidi);
       let idealRatio = targetFreq / f0;
       idealRatio = Math.min(RATIO_MAX, Math.max(RATIO_MIN, idealRatio));
-      this.targetRatio = 1 + this.strength * (idealRatio - 1);
+      // Blend in log-frequency space so "50% strength" closes half the
+      // distance in cents — musically even whether shifting up or down.
+      this.targetRatio = Math.pow(idealRatio, this.strength);
       this.period = Math.min(this.maxPeriod, Math.max(this.minPeriod, sampleRate / f0));
       this.voiced = true;
 
@@ -217,6 +261,14 @@ class PitchProcessor extends AudioWorkletProcessor {
       // a clean passthrough with no special-casing. Keep the last period.
       this.targetRatio = 1;
       this.voiced = false;
+      // Keep the held note through short dropouts (a breath, a consonant) so
+      // the target doesn't have to be re-acquired mid-phrase; release it after
+      // a few unvoiced frames so the next phrase starts fresh.
+      this.unvoicedRun++;
+      if (this.unvoicedRun > 3) {
+        this.heldMidi = null;
+        this.f0History.length = 0;
+      }
       this.msgCounter++;
       if (this.msgCounter % 3 === 0) {
         this.port.postMessage({ type: 'silence' });
