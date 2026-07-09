@@ -58,12 +58,24 @@
           Bypass (hear raw voice)
         </label>
       </div>
+
+      <div class="control-group control-group--full">
+        <span class="group-label">Presets</span>
+        <div class="presets">
+          <button type="button" class="preset" data-preset="subtle">Subtle</button>
+          <button type="button" class="preset" data-preset="pop">Pop</button>
+          <button type="button" class="preset" data-preset="hard">Hard Tune</button>
+        </div>
+      </div>
     </section>
+
+    <p id="guidance" class="guidance"></p>
 
     <section class="stage">
       <div class="buttons">
         <button id="startButton">Start</button>
         <button id="recordButton" disabled>● Record</button>
+        <button id="detectKeyButton" disabled>Detect Key</button>
       </div>
       <p id="status" class="status">Click Start and allow microphone access.</p>
       <div class="notes">

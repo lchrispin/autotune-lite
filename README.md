@@ -41,9 +41,21 @@ from your speakers and cause feedback/echo.
 - **Wet / Dry Mix** — blend between your raw voice and the autotuned signal.
 - **Bypass** — instantly hear your raw voice (ignores the mix slider), handy
   for A/B-ing the effect on and off.
+- **Presets** — one-click starting points: **Subtle** (gentle, natural),
+  **Pop** (noticeable but musical), **Hard Tune** (full robotic snap). They set
+  the strength and mix for you; tweak a slider afterwards to fine-tune.
 
-All control settings are remembered in `localStorage`, so they persist across
-page reloads.
+A short line under the controls describes the current effect in plain language,
+so you can tell at a glance whether you're set to "gentle, natural tuning" or a
+"hard robotic snap". All control settings are remembered in `localStorage`, so
+they persist across page reloads.
+
+### Detecting the key
+
+Not sure what key you're singing in? Click **Detect Key** while listening and
+sing for a few seconds — the app builds a pitch histogram and uses the
+Krumhansl-Schmuckler key-finding algorithm to pick the most likely key and
+scale, then sets them for you.
 
 ## Recording
 

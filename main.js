@@ -25,6 +25,9 @@ const playbackAudio = document.getElementById('playbackAudio');
 const downloadLink = document.getElementById('downloadLink');
 const retuneButton = document.getElementById('retuneButton');
 const fileInput = document.getElementById('fileInput');
+const detectKeyButton = document.getElementById('detectKeyButton');
+const guidanceEl = document.getElementById('guidance');
+const presetButtons = document.querySelectorAll('.preset');
 
 const STORAGE_KEY = 'autotune-lite-settings';
 
@@ -83,6 +86,10 @@ let rawChunks = [];
 let rawBlob = null;
 let retunedUrl = null;
 let sourceUrl = null; // object URL for the current take/upload shown in the player
+
+let detecting = false;
+let keyHistogram = new Array(12).fill(0);
+let detectTimer = null;
 
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
@@ -193,6 +200,10 @@ async function start() {
     if (msg.type === 'pitch') {
       detectedEl.textContent = `Detected: ${midiToNoteName(msg.detectedMidi)} (${msg.detectedFreq.toFixed(1)} Hz)`;
       targetEl.textContent = `Target: ${midiToNoteName(msg.targetMidi)} (${msg.targetFreq.toFixed(1)} Hz)`;
+      if (detecting) {
+        const pc = ((Math.round(msg.detectedMidi) % 12) + 12) % 12;
+        keyHistogram[pc]++;
+      }
     } else if (msg.type === 'silence') {
       detectedEl.textContent = 'Detected: —';
       targetEl.textContent = 'Target: —';
@@ -206,6 +217,7 @@ async function start() {
   startButton.textContent = 'Stop';
   startButton.disabled = false;
   recordButton.disabled = false;
+  detectKeyButton.disabled = false;
   resizeCanvas();
   drawVisualizer();
 }
@@ -391,6 +403,13 @@ function stop() {
   running = false;
   stopRecording();
   recordButton.disabled = true;
+  detectKeyButton.disabled = true;
+  if (detectTimer) {
+    clearTimeout(detectTimer);
+    detectTimer = null;
+  }
+  detecting = false;
+  detectKeyButton.textContent = 'Detect Key';
   recordDest = null;
   rawDest = null;
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
@@ -425,38 +444,171 @@ function updateStrengthLabel() {
   strengthValue.textContent = `${strengthSlider.value}%`;
 }
 
+// --- Presets: one-click sensible combinations of strength + mix ---
+const PRESETS = {
+  subtle: { strength: 40, mix: 90 },
+  pop: { strength: 75, mix: 100 },
+  hard: { strength: 100, mix: 100 },
+};
+
+function applyPreset(name) {
+  const preset = PRESETS[name];
+  if (!preset) return;
+  strengthSlider.value = preset.strength;
+  mixSlider.value = preset.mix;
+  bypassCheckbox.checked = false;
+  updateStrengthLabel();
+  updateMix();
+  sendParams();
+  saveSettings();
+  markActivePreset(name);
+  updateGuidance();
+}
+
+function markActivePreset(name) {
+  presetButtons.forEach((btn) => btn.classList.toggle('active', btn.dataset.preset === name));
+}
+
+// Clear the active-preset highlight when the user hand-tweaks the sliders.
+function clearActivePreset() {
+  presetButtons.forEach((btn) => btn.classList.remove('active'));
+}
+
+// --- Plain-language description of the current effect ---
+function updateGuidance() {
+  const strength = Number(strengthSlider.value);
+  const scale = scaleSelect.value;
+  const scaleText =
+    scale === 'chromatic'
+      ? 'snapping to the nearest semitone (any key)'
+      : `snapping into ${NOTE_NAMES[Number(keySelect.value)]} ${scale}`;
+
+  let amount;
+  if (bypassCheckbox.checked) amount = 'Bypassed — you hear your raw voice.';
+  else if (strength < 20) amount = 'Barely correcting — nearly your natural voice.';
+  else if (strength < 60) amount = `Gentle, natural tuning, ${scaleText}.`;
+  else if (strength < 95) amount = `Strong tuning, ${scaleText}.`;
+  else
+    amount =
+      scale === 'chromatic'
+        ? `Hard robotic snap (T-Pain style), ${scaleText}.`
+        : `Hard snap, ${scaleText}.`;
+  guidanceEl.textContent = amount;
+}
+
+// --- Detect the key/scale from what the user is singing (Krumhansl-Schmuckler) ---
+const KRUMHANSL_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const KRUMHANSL_MINOR = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+
+function correlate(a, b) {
+  const n = a.length;
+  let ma = 0;
+  let mb = 0;
+  for (let i = 0; i < n; i++) {
+    ma += a[i];
+    mb += b[i];
+  }
+  ma /= n;
+  mb /= n;
+  let num = 0;
+  let da = 0;
+  let db = 0;
+  for (let i = 0; i < n; i++) {
+    const x = a[i] - ma;
+    const y = b[i] - mb;
+    num += x * y;
+    da += x * x;
+    db += y * y;
+  }
+  return da && db ? num / Math.sqrt(da * db) : -1;
+}
+
+function detectKeyFromHistogram(hist) {
+  let total = 0;
+  for (const v of hist) total += v;
+  if (total < 8) return null; // too little pitched audio to be confident
+  let best = { score: -Infinity };
+  for (let root = 0; root < 12; root++) {
+    const maj = KRUMHANSL_MAJOR.map((_, i) => KRUMHANSL_MAJOR[(i - root + 12) % 12]);
+    const min = KRUMHANSL_MINOR.map((_, i) => KRUMHANSL_MINOR[(i - root + 12) % 12]);
+    const sMaj = correlate(hist, maj);
+    const sMin = correlate(hist, min);
+    if (sMaj > best.score) best = { score: sMaj, root, scale: 'major' };
+    if (sMin > best.score) best = { score: sMin, root, scale: 'minor' };
+  }
+  return best;
+}
+
+function startDetectKey() {
+  if (!running || detecting) return;
+  detecting = true;
+  keyHistogram = new Array(12).fill(0);
+  detectKeyButton.disabled = true;
+  detectKeyButton.textContent = 'Listening…';
+  statusEl.textContent = 'Listening for your key — sing a few notes…';
+  detectTimer = setTimeout(finishDetectKey, 6000);
+}
+
+function finishDetectKey() {
+  detecting = false;
+  detectTimer = null;
+  detectKeyButton.textContent = 'Detect Key';
+  detectKeyButton.disabled = !running;
+
+  const result = detectKeyFromHistogram(keyHistogram);
+  if (!result) {
+    statusEl.textContent = 'Could not detect a key — sing a bit louder and try again.';
+    return;
+  }
+  keySelect.value = String(result.root);
+  scaleSelect.value = result.scale;
+  sendParams();
+  saveSettings();
+  updateGuidance();
+  statusEl.textContent = `Detected key: ${NOTE_NAMES[result.root]} ${result.scale}.`;
+}
+
 startButton.addEventListener('click', () => {
   if (running) stop();
   else start();
 });
 
 recordButton.addEventListener('click', toggleRecord);
+detectKeyButton.addEventListener('click', startDetectKey);
+presetButtons.forEach((btn) => btn.addEventListener('click', () => applyPreset(btn.dataset.preset)));
 retuneButton.addEventListener('click', retune);
 fileInput.addEventListener('change', handleFileUpload);
 
 keySelect.addEventListener('change', () => {
   sendParams();
   saveSettings();
+  updateGuidance();
 });
 scaleSelect.addEventListener('change', () => {
   sendParams();
   saveSettings();
+  updateGuidance();
 });
 strengthSlider.addEventListener('input', () => {
   updateStrengthLabel();
   sendParams();
   saveSettings();
+  clearActivePreset();
+  updateGuidance();
 });
 mixSlider.addEventListener('input', () => {
   updateMix();
   saveSettings();
+  clearActivePreset();
 });
 bypassCheckbox.addEventListener('change', () => {
   updateMix();
   saveSettings();
+  updateGuidance();
 });
 
 loadSettings();
 updateStrengthLabel();
 updateMix();
+updateGuidance();
 resizeCanvas();

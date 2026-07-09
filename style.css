@@ -61,6 +61,59 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+.control-group--full {
+  grid-column: 1 / -1;
+}
+
+.group-label {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.presets {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.preset {
+  flex: 1;
+  min-width: 80px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 0.45rem 0.5rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+
+.preset:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.preset.active {
+  background: #38bdf8;
+  color: #0f172a;
+  border-color: #38bdf8;
+  font-weight: 600;
+}
+
+.guidance {
+  text-align: center;
+  margin: 0 0 1.5rem;
+  color: #7dd3fc;
+  font-size: 0.9rem;
+  min-height: 1.2em;
+}
+
+#detectKeyButton {
+  background: #34d399;
+  color: #0f172a;
+}
+
 .control-group--checkbox {
   grid-column: 1 / -1;
   flex-direction: row;
