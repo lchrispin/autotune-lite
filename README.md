@@ -53,6 +53,15 @@ so the autotune correction is baked in — and appears below the visualizer as a
 playback player with a **Download** link. Recording uses the browser's
 `MediaRecorder` (WebM/Opus where supported, with MP4/Ogg fallbacks).
 
+### Re-tuning a take
+
+Each recording also captures your **raw (dry) voice** in the background. Change
+the key, scale, or correction strength, then click **Re-tune with current
+settings** to re-run that same performance through the pitch engine offline —
+no need to sing it again. Re-tuning renders through an `OfflineAudioContext`
+and produces a downloadable WAV, so you can quickly A/B the same take in
+different keys.
+
 ## Browser support
 
 Requires a browser with `AudioWorklet` support (current Chrome, Edge,
