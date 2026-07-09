@@ -62,6 +62,11 @@ no need to sing it again. Re-tuning renders through an `OfflineAudioContext`
 and produces a downloadable WAV, so you can quickly A/B the same take in
 different keys.
 
+You don't have to record here to use this: pick any audio file with **Or
+re-tune an existing audio file** and it becomes the re-tune source. Choose a
+key/scale/strength and click **Re-tune** to get an autotuned WAV back — no
+microphone needed.
+
 ## Browser support
 
 Requires a browser with `AudioWorklet` support (current Chrome, Edge,

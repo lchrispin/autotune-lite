@@ -24,6 +24,7 @@ const playbackLabel = document.getElementById('playbackLabel');
 const playbackAudio = document.getElementById('playbackAudio');
 const downloadLink = document.getElementById('downloadLink');
 const retuneButton = document.getElementById('retuneButton');
+const fileInput = document.getElementById('fileInput');
 
 const STORAGE_KEY = 'autotune-lite-settings';
 
@@ -81,6 +82,7 @@ let rawRecorder = null;
 let rawChunks = [];
 let rawBlob = null;
 let retunedUrl = null;
+let sourceUrl = null; // object URL for the current take/upload shown in the player
 
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
@@ -280,6 +282,25 @@ function toggleRecord() {
   else startRecording();
 }
 
+// Load an audio file as the re-tune source, so a performance can be re-tuned
+// even if it wasn't recorded here. An uploaded File is a Blob, so retune()
+// consumes it exactly like a live take.
+function handleFileUpload(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  rawBlob = file;
+  if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+  sourceUrl = URL.createObjectURL(file);
+  playbackAudio.src = sourceUrl;
+  downloadLink.href = sourceUrl;
+  downloadLink.download = file.name;
+  playbackLabel.textContent = `Uploaded — ${file.name}`;
+  playback.classList.remove('hidden');
+  retuneButton.disabled = false;
+  statusEl.textContent = 'File loaded. Pick a key/scale/strength, then click Re-tune.';
+}
+
 // Render a mono AudioBuffer to a 16-bit PCM WAV blob (OfflineAudioContext
 // hands back raw samples, so we encode them ourselves — no dependencies).
 function audioBufferToWav(buffer) {
@@ -411,6 +432,7 @@ startButton.addEventListener('click', () => {
 
 recordButton.addEventListener('click', toggleRecord);
 retuneButton.addEventListener('click', retune);
+fileInput.addEventListener('change', handleFileUpload);
 
 keySelect.addEventListener('change', () => {
   sendParams();
