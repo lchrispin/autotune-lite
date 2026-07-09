@@ -96,9 +96,13 @@ select {
   padding: 1.5rem;
 }
 
-#startButton {
-  background: #38bdf8;
-  color: #0f172a;
+.buttons {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.buttons button {
   border: none;
   border-radius: 999px;
   padding: 0.75rem 2rem;
@@ -108,8 +112,60 @@ select {
   transition: transform 0.1s ease;
 }
 
-#startButton:hover {
+.buttons button:hover:not(:disabled) {
   transform: scale(1.03);
+}
+
+.buttons button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+#startButton {
+  background: #38bdf8;
+  color: #0f172a;
+}
+
+#recordButton {
+  background: #f87171;
+  color: #0f172a;
+}
+
+#recordButton.recording {
+  background: #ef4444;
+  color: #fff;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% { opacity: 0.6; }
+}
+
+.playback {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.playback.hidden {
+  display: none;
+}
+
+.playback-label {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.playback audio {
+  width: 100%;
+}
+
+.playback a {
+  color: #7dd3fc;
+  font-size: 0.85rem;
 }
 
 .status {
