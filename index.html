@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Autotune Lite</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:," />
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>Autotune Lite</h1>
+      <p class="subtitle">A tiny real-time voice autotune demo, right in your browser.</p>
+    </header>
+
+    <section class="controls">
+      <div class="control-group">
+        <label for="key">Key</label>
+        <select id="key">
+          <option value="0">C</option>
+          <option value="1">C#</option>
+          <option value="2">D</option>
+          <option value="3">D#</option>
+          <option value="4">E</option>
+          <option value="5">F</option>
+          <option value="6">F#</option>
+          <option value="7">G</option>
+          <option value="8">G#</option>
+          <option value="9">A</option>
+          <option value="10">A#</option>
+          <option value="11">B</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label for="scale">Scale</label>
+        <select id="scale">
+          <option value="chromatic">Chromatic</option>
+          <option value="major">Major</option>
+          <option value="minor">Minor</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label for="strength">Correction Strength</label>
+        <input type="range" id="strength" min="0" max="100" value="100" />
+      </div>
+
+      <div class="control-group">
+        <label for="mix">Wet / Dry Mix</label>
+        <input type="range" id="mix" min="0" max="100" value="100" />
+      </div>
+    </section>
+
+    <section class="stage">
+      <button id="startButton">Start</button>
+      <p id="status" class="status">Click Start and allow microphone access.</p>
+      <div class="notes">
+        <span id="detected">Detected: —</span>
+        <span id="target">Target: —</span>
+      </div>
+      <canvas id="visualizer"></canvas>
+    </section>
+
+    <footer>
+      <p>Tip: use headphones so the mic doesn't pick up the speaker output.</p>
+    </footer>
+  </main>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

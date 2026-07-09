@@ -1,0 +1,10 @@
+{
+  "name": "autotune-lite",
+  "version": "1.0.0",
+  "description": "A lightweight, dependency-free browser app that autotunes your voice in real time using the Web Audio API.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
