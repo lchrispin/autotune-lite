@@ -17,6 +17,40 @@ const strengthSlider = document.getElementById('strength');
 const mixSlider = document.getElementById('mix');
 const strengthValue = document.getElementById('strengthValue');
 const mixValue = document.getElementById('mixValue');
+const bypassCheckbox = document.getElementById('bypass');
+
+const STORAGE_KEY = 'autotune-lite-settings';
+
+function loadSettings() {
+  let saved;
+  try {
+    saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+  } catch {
+    saved = {};
+  }
+  if (saved.key !== undefined) keySelect.value = saved.key;
+  if (saved.scale !== undefined) scaleSelect.value = saved.scale;
+  if (saved.strength !== undefined) strengthSlider.value = saved.strength;
+  if (saved.mix !== undefined) mixSlider.value = saved.mix;
+  if (saved.bypass !== undefined) bypassCheckbox.checked = saved.bypass;
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        key: keySelect.value,
+        scale: scaleSelect.value,
+        strength: strengthSlider.value,
+        mix: mixSlider.value,
+        bypass: bypassCheckbox.checked,
+      })
+    );
+  } catch {
+    // Storage may be unavailable (private mode, disabled) — ignore.
+  }
+}
 const canvas = document.getElementById('visualizer');
 const canvasCtx = canvas.getContext('2d');
 
@@ -170,7 +204,8 @@ function stop() {
 function updateMix() {
   mixValue.textContent = `${mixSlider.value}%`;
   if (!dryGain || !wetGain) return;
-  const mix = Number(mixSlider.value) / 100;
+  // Bypass forces the raw (dry) signal through regardless of the mix slider.
+  const mix = bypassCheckbox.checked ? 0 : Number(mixSlider.value) / 100;
   dryGain.gain.value = 1 - mix;
   wetGain.gain.value = mix;
 }
@@ -184,12 +219,29 @@ startButton.addEventListener('click', () => {
   else start();
 });
 
-keySelect.addEventListener('change', sendParams);
-scaleSelect.addEventListener('change', sendParams);
+keySelect.addEventListener('change', () => {
+  sendParams();
+  saveSettings();
+});
+scaleSelect.addEventListener('change', () => {
+  sendParams();
+  saveSettings();
+});
 strengthSlider.addEventListener('input', () => {
   updateStrengthLabel();
   sendParams();
+  saveSettings();
 });
-mixSlider.addEventListener('input', updateMix);
+mixSlider.addEventListener('input', () => {
+  updateMix();
+  saveSettings();
+});
+bypassCheckbox.addEventListener('change', () => {
+  updateMix();
+  saveSettings();
+});
 
+loadSettings();
+updateStrengthLabel();
+updateMix();
 resizeCanvas();

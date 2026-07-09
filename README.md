@@ -39,6 +39,11 @@ from your speakers and cause feedback/echo.
 - **Correction Strength** — how strongly pitch is pulled toward the target
   note (0% = no correction, 100% = full snap).
 - **Wet / Dry Mix** — blend between your raw voice and the autotuned signal.
+- **Bypass** — instantly hear your raw voice (ignores the mix slider), handy
+  for A/B-ing the effect on and off.
+
+All control settings are remembered in `localStorage`, so they persist across
+page reloads.
 
 ## Browser support
 
