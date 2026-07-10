@@ -113,6 +113,36 @@ re-tune an existing audio file** and it becomes the re-tune source. Choose a
 key/scale/strength and click **Re-tune** to get an autotuned WAV back — no
 microphone needed.
 
+### Editing individual notes
+
+Sang the right rhythm but the wrong (or too-samey) pitches? Click **Edit
+Notes** on a take and the app analyzes the raw recording into discrete sung
+notes, shown on a piano roll — one block per note, with rows belonging to the
+current key/scale tinted.
+
+- **Move a note**: click a block to select it (playback jumps to that note so
+  you can hear which one it is), then drag it up or down, use the
+  **▲/▼ Semitone** buttons, or click one of the suggested-target chips. A
+  dashed outline marks the note's original pitch; edited notes turn amber.
+- **Hints**: the editor suggests where to go — the nearest scale notes above
+  and below the selected note, flagged out-of-key notes, and **monotone
+  detection**: runs of three or more repeated pitches get a pink underline
+  plus stronger suggestions (including a scale-third leap) for breaking the
+  run up into a melody.
+- **Render edited take** re-runs the raw performance offline with each edited
+  note pinned to its chosen pitch; unedited notes keep the normal key/scale
+  snapping. The result appears in the player as a downloadable WAV, and the
+  current Correction Strength / Retune Speed still shape how hard each note
+  is pulled.
+
+Under the hood the note editor sends the pitch worklet a *note map* —
+`[{start, end, midi}]` in input-sample positions — which overrides scale
+snapping while the analysis position is inside an edited note. The map (and
+all offline settings) travel via `processorOptions` rather than
+`port.postMessage`, because an `OfflineAudioContext` renders without ever
+servicing the worklet's incoming message queue, so posted messages would only
+arrive after the render finished.
+
 ## Browser support
 
 Requires a browser with `AudioWorklet` support (current Chrome, Edge,
