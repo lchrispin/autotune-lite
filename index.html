@@ -115,8 +115,27 @@
         <audio id="playbackAudio" controls></audio>
         <div class="playback-actions">
           <button id="retuneButton" disabled>Re-tune with current settings</button>
+          <button id="editNotesButton" disabled>Edit Notes</button>
           <a id="downloadLink" download="autotune-recording.webm">Download</a>
         </div>
+      </div>
+
+      <div id="noteEditor" class="note-editor hidden">
+        <p class="playback-label">
+          Note editor — click a note to select it (playback jumps there), then drag it or use the
+          buttons to move it up or down. Render to hear the result.
+        </p>
+        <canvas id="pianoRoll"></canvas>
+        <div class="note-editbar">
+          <button id="noteDownButton" disabled title="Move the selected note down one semitone">▼ Semitone</button>
+          <button id="noteUpButton" disabled title="Move the selected note up one semitone">▲ Semitone</button>
+          <button id="noteResetButton" disabled>Reset note</button>
+          <button id="noteResetAllButton">Reset all</button>
+          <button id="renderEditsButton">Render edited take</button>
+        </div>
+        <p id="noteInfo" class="note-info">No note selected.</p>
+        <p id="noteHints" class="note-hints"></p>
+        <div id="hintChips" class="hint-chips"></div>
       </div>
     </section>
 

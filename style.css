@@ -263,6 +263,119 @@ select {
   cursor: not-allowed;
 }
 
+#editNotesButton {
+  background: #fbbf24;
+  color: #0f172a;
+  border: none;
+  border-radius: 999px;
+  padding: 0.5rem 1.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+#editNotesButton:hover:not(:disabled) {
+  transform: scale(1.03);
+}
+
+#editNotesButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.note-editor {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.note-editor.hidden {
+  display: none;
+}
+
+#pianoRoll {
+  height: 240px;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.note-editbar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.note-editbar button {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.note-editbar button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.note-editbar button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.note-editbar #renderEditsButton {
+  background: #fbbf24;
+  color: #0f172a;
+  border-color: #fbbf24;
+  font-weight: 600;
+}
+
+.note-editbar #renderEditsButton:hover:not(:disabled) {
+  background: #fcd34d;
+}
+
+.note-info {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #e2e8f0;
+  min-height: 1.2em;
+}
+
+.note-hints {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #94a3b8;
+  min-height: 1.2em;
+}
+
+.hint-chips {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  min-height: 1.9rem;
+}
+
+.hint-chip {
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  color: #fbbf24;
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.hint-chip:hover {
+  background: rgba(251, 191, 36, 0.25);
+}
+
 .status {
   margin: 1rem 0 0.5rem;
   color: #94a3b8;

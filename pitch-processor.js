@@ -59,7 +59,7 @@ function snapMidiToScale(midiFloat, rootPc, scaleIntervals) {
 }
 
 class PitchProcessor extends AudioWorkletProcessor {
-  constructor() {
+  constructor(options) {
     super();
 
     this.ring = new Float32Array(RING_SIZE);
@@ -106,23 +106,46 @@ class PitchProcessor extends AudioWorkletProcessor {
     this.strength = 1; // 0..1, how strongly to pull toward the snapped note
     this.retuneAlpha = 0.3; // per-block lerp toward targetRatio (set by retuneSpeed)
 
+    // Note-edit map for offline re-renders: sorted [{start, end, midi}] in
+    // input-sample positions. While the analysis position falls inside an
+    // entry, that entry's midi overrides scale snapping — this is how the
+    // note editor moves individual sung notes to user-chosen pitches.
+    this.noteMap = null;
+    this.noteMapIdx = 0;
+
     this.msgCounter = 0;
 
     this.port.onmessage = (event) => {
       const msg = event.data;
-      if (msg.type === 'params') {
-        if (typeof msg.root === 'number') this.rootPc = ((msg.root % 12) + 12) % 12;
-        if (msg.scale && SCALES[msg.scale]) this.scaleIntervals = SCALES[msg.scale];
-        if (typeof msg.strength === 'number') this.strength = Math.min(1, Math.max(0, msg.strength));
-        if (typeof msg.enabled === 'boolean') this.enabled = msg.enabled;
-        if (typeof msg.retuneSpeed === 'number') {
-          // 0 = slow, natural glide; 1 = near-instant robotic snap. Squared so
-          // the lower half of the slider gives fine control over gentle glides.
-          const s = Math.min(1, Math.max(0, msg.retuneSpeed));
-          this.retuneAlpha = 0.03 + s * s * 0.95;
-        }
-      }
+      if (msg.type === 'params') this.applyParams(msg);
+      else if (msg.type === 'noteMap') this.setNoteMap(msg.notes);
     };
+
+    // Offline rendering never services the port's message queue while the
+    // render runs, so postMessage-ed params would arrive too late. Initial
+    // settings therefore also travel via processorOptions, which the spec
+    // guarantees are delivered here, before the first process() call.
+    const opts = (options && options.processorOptions) || {};
+    this.applyParams(opts);
+    if (opts.noteMap) this.setNoteMap(opts.noteMap);
+  }
+
+  applyParams(msg) {
+    if (typeof msg.root === 'number') this.rootPc = ((msg.root % 12) + 12) % 12;
+    if (msg.scale && SCALES[msg.scale]) this.scaleIntervals = SCALES[msg.scale];
+    if (typeof msg.strength === 'number') this.strength = Math.min(1, Math.max(0, msg.strength));
+    if (typeof msg.enabled === 'boolean') this.enabled = msg.enabled;
+    if (typeof msg.retuneSpeed === 'number') {
+      // 0 = slow, natural glide; 1 = near-instant robotic snap. Squared so
+      // the lower half of the slider gives fine control over gentle glides.
+      const s = Math.min(1, Math.max(0, msg.retuneSpeed));
+      this.retuneAlpha = 0.03 + s * s * 0.95;
+    }
+  }
+
+  setNoteMap(notes) {
+    this.noteMap = Array.isArray(notes) && notes.length > 0 ? notes : null;
+    this.noteMapIdx = 0;
   }
 
   detectPitch(buf) {
@@ -222,17 +245,27 @@ class PitchProcessor extends AudioWorkletProcessor {
 
     if (f0 > 0 && this.enabled) {
       const midi = freqToMidi(f0);
-      let snappedMidi = snapMidiToScale(midi, this.rootPc, this.scaleIntervals);
-      // Hysteresis: keep the held target note unless the detected pitch is
-      // decisively closer to a different scale note. Without this the target
-      // flickers between neighbours whenever the singer sits near the
-      // boundary, which is audible as a rapid warble/trill.
-      if (
-        this.heldMidi !== null &&
-        snappedMidi !== this.heldMidi &&
-        Math.abs(midi - this.heldMidi) < Math.abs(midi - snappedMidi) + HYSTERESIS_SEMITONES
-      ) {
-        snappedMidi = this.heldMidi;
+      let snappedMidi;
+      // The analysis window's newest sample is the write head, so its centre —
+      // the position the f0 estimate describes — sits half a window behind.
+      const edit = this.lookupNoteEdit(this.writeIndex - ANALYSIS_WINDOW / 2);
+      if (edit) {
+        // An explicit note edit wins over scale snapping, and skips hysteresis:
+        // the user picked this exact pitch, so there is nothing to debounce.
+        snappedMidi = edit.midi;
+      } else {
+        snappedMidi = snapMidiToScale(midi, this.rootPc, this.scaleIntervals);
+        // Hysteresis: keep the held target note unless the detected pitch is
+        // decisively closer to a different scale note. Without this the target
+        // flickers between neighbours whenever the singer sits near the
+        // boundary, which is audible as a rapid warble/trill.
+        if (
+          this.heldMidi !== null &&
+          snappedMidi !== this.heldMidi &&
+          Math.abs(midi - this.heldMidi) < Math.abs(midi - snappedMidi) + HYSTERESIS_SEMITONES
+        ) {
+          snappedMidi = this.heldMidi;
+        }
       }
       this.heldMidi = snappedMidi;
       this.unvoicedRun = 0;
@@ -274,6 +307,20 @@ class PitchProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'silence' });
       }
     }
+  }
+
+  // Find the note-map entry covering input-sample position `pos`, if any.
+  // Analysis positions only move forward, so a cursor over the sorted map
+  // makes every lookup O(1) amortized.
+  lookupNoteEdit(pos) {
+    const map = this.noteMap;
+    if (!map) return null;
+    while (this.noteMapIdx < map.length && map[this.noteMapIdx].end <= pos) {
+      this.noteMapIdx++;
+    }
+    if (this.noteMapIdx >= map.length) return null;
+    const entry = map[this.noteMapIdx];
+    return pos >= entry.start ? entry : null;
   }
 
   readRing(pos) {
