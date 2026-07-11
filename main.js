@@ -900,6 +900,21 @@ let noteDrag = null;
 let rollLowMidi = 48;
 let rollRows = 14;
 
+// On a touch screen the fingertip is the pointer, so rows need to be tall
+// enough to land on and misses need to snap to the nearest note.
+const COARSE_POINTER =
+  (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+  'ontouchstart' in window;
+const MIN_ROW_PX = COARSE_POINTER ? 28 : 17;
+
+// Size the piano roll so every row meets the minimum touch-target height,
+// growing the canvas instead of shrinking the rows when the range is wide.
+function updateRollHeight() {
+  const h = Math.max(240, Math.min(560, rollRows * MIN_ROW_PX));
+  pianoRoll.style.height = `${h}px`;
+  resizePianoRoll();
+}
+
 function effectiveMidi(seg) {
   return seg.targetMidi !== null ? seg.targetMidi : seg.baseMidi;
 }
@@ -963,7 +978,7 @@ async function analyzeTake() {
     markMonotoneRuns();
     computeRollRange();
     noteEditor.classList.remove('hidden');
-    resizePianoRoll();
+    updateRollHeight();
     drawPianoRoll();
     updateNotePanel();
     statusEl.textContent = `Found ${segments.length} notes. Click one to move it up or down.`;
@@ -1089,6 +1104,7 @@ function setNoteTarget(seg, midi) {
   seg.targetMidi = clamped === seg.baseMidi ? null : clamped;
   markMonotoneRuns();
   computeRollRange();
+  updateRollHeight();
   updateNotePanel();
   drawPianoRoll();
 }
@@ -1110,15 +1126,26 @@ pianoRoll.addEventListener('pointerdown', (e) => {
   const h = pianoRoll.clientHeight;
   const rowH = h / rollRows;
   const scaleX = pianoRoll.clientWidth / noteDuration;
+  // A fingertip lands less precisely than a mouse, so accept taps near a
+  // note and pick the closest candidate rather than requiring a direct hit.
+  const touch = e.pointerType === 'touch' || COARSE_POINTER;
+  const slopX = touch ? 14 : 3;
+  const slopY = touch ? rowH * 0.9 : 3;
   let hit = -1;
+  let bestDist = Infinity;
   for (let i = 0; i < noteSegments.length; i++) {
     const seg = noteSegments[i];
     const sx = seg.startTime * scaleX;
     const sw = Math.max(3, (seg.endTime - seg.startTime) * scaleX - 1);
     const sy = h - (effectiveMidi(seg) - rollLowMidi + 1) * rowH;
-    if (x >= sx - 2 && x <= sx + sw + 2 && y >= sy - 2 && y <= sy + rowH + 2) {
+    if (x < sx - slopX || x > sx + sw + slopX || y < sy - slopY || y > sy + rowH + slopY) continue;
+    // Distance from the tap to the block's edge (0 when inside it).
+    const dx = Math.max(sx - x, 0, x - (sx + sw));
+    const dy = Math.max(sy - y, 0, y - (sy + rowH));
+    const dist = Math.hypot(dx, dy);
+    if (dist < bestDist) {
+      bestDist = dist;
       hit = i;
-      break;
     }
   }
   selectedNoteIndex = hit;
@@ -1160,6 +1187,7 @@ pianoRoll.addEventListener('pointermove', (e) => {
 function endNoteDrag() {
   if (noteDrag && noteDrag.moved) {
     computeRollRange();
+    updateRollHeight();
     drawPianoRoll();
   }
   noteDrag = null;
@@ -1253,6 +1281,7 @@ noteResetAllButton.addEventListener('click', () => {
   });
   markMonotoneRuns();
   computeRollRange();
+  updateRollHeight();
   updateNotePanel();
   drawPianoRoll();
 });
