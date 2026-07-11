@@ -234,7 +234,9 @@ select {
 .playback-actions {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
 }
 
 .playback a {
@@ -374,6 +376,44 @@ select {
 
 .hint-chip:hover {
   background: rgba(251, 191, 36, 0.25);
+}
+
+/* Touch screens and small viewports: grow everything to comfortable
+   finger-sized targets (the piano roll's row height is handled in JS). */
+@media (pointer: coarse), (max-width: 640px) {
+  .note-editbar {
+    gap: 0.6rem;
+  }
+
+  .note-editbar button {
+    flex: 1 1 auto;
+    min-height: 44px;
+    padding: 0.6rem 1rem;
+    font-size: 0.95rem;
+  }
+
+  .hint-chip {
+    min-height: 44px;
+    padding: 0.55rem 1.2rem;
+    font-size: 0.95rem;
+  }
+
+  #retuneButton,
+  #editNotesButton {
+    min-height: 44px;
+    padding: 0.6rem 1.4rem;
+    font-size: 0.95rem;
+  }
+
+  .playback a {
+    padding: 0.6rem 0.4rem; /* enlarge the Download link's tap area */
+    font-size: 0.95rem;
+  }
+
+  /* Give the piano roll more horizontal room on narrow screens. */
+  .stage {
+    padding: 1.25rem 0.6rem;
+  }
 }
 
 .status {
